@@ -85,10 +85,6 @@ public:
       output.addPoint(input[0]);
     }
     else if (input.size() >= 2) {
-      // The freehand controller returns only the last two points to
-      // interwine because we accumulate (TracePolicy::Accumulate) the
-      // previously painted points (i.e. don't want to redraw all the
-      // stroke from the very beginning)
       output.addPoint(input[input.size() - 2]);
       output.addPoint(input[input.size() - 1]);
     }
@@ -154,15 +150,9 @@ public:
   }
 
   bool hasRadius() const { return m_radius > 0; }
-
   int radius() const { return m_radius; }
-
-  // Gets the corner radius limited by the maximum radius allowed by the stroke
-  // points.
   int radius(const Stroke& stroke) const { return std::min(m_radius, maxRadius(stroke)); }
-
   void radius(int r) { m_radius = r; }
-
   void capRadius(Stroke& stroke) { m_radius = radius(stroke); }
 
 private:
@@ -189,6 +179,7 @@ public:
 
     m_first = m_center = pt;
     m_angle = 0.0;
+    m_lastSlopeText = "";
 
     m_cornerRadius.loop(loop);
     if (loop->getIntertwine()->cornerRadiusSupport()) {
@@ -243,45 +234,115 @@ public:
     stroke[1] = pt;
 
     bool isoAngle = false;
+    m_lastSlopeText = "";
 
     if ((int(loop->getModifiers()) & int(ToolLoopModifiers::kSquareAspect))) {
       int dx = stroke[1].x - m_first.x;
       int dy = stroke[1].y - m_first.y;
       int minsize = std::min(ABS(dx), ABS(dy));
-      int maxsize = std::max(ABS(dx), ABS(dy));
 
       // Lines
       if (loop->getIntertwine()->snapByAngle()) {
-        double angle = 180.0 * std::atan(static_cast<double>(-dy) / static_cast<double>(dx)) / PI;
-        angle = ABS(angle);
+        double angle = 180.0 *
+                       std::atan2(static_cast<double>(ABS(dy)), static_cast<double>(ABS(dx))) / PI;
 
-        // Snap horizontally
-        if (angle < 18.0) {
+        // Horiz (0°)
+        if (angle < 2.5) {
           stroke[1].y = m_first.y;
+          m_lastSlopeText = "Flat";
         }
-        // Snap at 26.565
-        else if (angle < 36.0) {
-          stroke[1].x = m_first.x + SGN(dx) * maxsize;
-          stroke[1].y = m_first.y + SGN(dy) * maxsize / 2;
+        // 10:1 (5.71°)
+        else if (angle < 7.5) {
+          int steps = (ABS(dx) + 5) / 10; // Rounded
+          stroke[1].x = m_first.x + SGN(dx) * (steps * 10 - (steps > 0 ? 1 : 0));
+          stroke[1].y = m_first.y + SGN(dy) * (steps > 0 ? steps - 1 : 0);
+          m_lastSlopeText = "10:1";
           isoAngle = true;
         }
-        // Snap at 45
-        else if (angle < 54.0) {
+        // 6:1 (9.46°)
+        else if (angle < 12.0) {
+          int steps = (ABS(dx) + 3) / 6;
+          stroke[1].x = m_first.x + SGN(dx) * (steps * 6 - (steps > 0 ? 1 : 0));
+          stroke[1].y = m_first.y + SGN(dy) * (steps > 0 ? steps - 1 : 0);
+          m_lastSlopeText = "6:1";
+          isoAngle = true;
+        }
+        // 4:1 (14.03°)
+        else if (angle < 16.0) {
+          int steps = (ABS(dx) + 2) / 4;
+          stroke[1].x = m_first.x + SGN(dx) * (steps * 4 - (steps > 0 ? 1 : 0));
+          stroke[1].y = m_first.y + SGN(dy) * (steps > 0 ? steps - 1 : 0);
+          m_lastSlopeText = "4:1";
+          isoAngle = true;
+        }
+        // 3:1 (18.43°)
+        else if (angle < 22.5) {
+          int steps = (ABS(dx) + 1) / 3;
+          stroke[1].x = m_first.x + SGN(dx) * (steps * 3 - (steps > 0 ? 1 : 0));
+          stroke[1].y = m_first.y + SGN(dy) * (steps > 0 ? steps - 1 : 0);
+          m_lastSlopeText = "3:1";
+          isoAngle = true;
+        }
+        // 2:1 (26.56°)
+        else if (angle < 35.0) {
+          int steps = (ABS(dx) + 1) / 2;
+          stroke[1].x = m_first.x + SGN(dx) * (steps * 2 - (steps > 0 ? 1 : 0));
+          stroke[1].y = m_first.y + SGN(dy) * (steps > 0 ? steps - 1 : 0);
+          m_lastSlopeText = "2:1";
+          isoAngle = true;
+        }
+        // 1:1 (45°)
+        else if (angle < 55.0) {
           stroke[1].x = m_first.x + SGN(dx) * minsize;
           stroke[1].y = m_first.y + SGN(dy) * minsize;
+          m_lastSlopeText = "1:1";
         }
-        // Snap at 63.435
-        else if (angle < 72.0) {
-          stroke[1].x = m_first.x + SGN(dx) * maxsize / 2;
-          stroke[1].y = m_first.y + SGN(dy) * maxsize;
+        // 1:2 (63.43°)
+        else if (angle < 67.5) {
+          int steps = (ABS(dy) + 1) / 2;
+          stroke[1].x = m_first.x + SGN(dx) * (steps > 0 ? steps - 1 : 0);
+          stroke[1].y = m_first.y + SGN(dy) * (steps * 2 - (steps > 0 ? 1 : 0));
+          m_lastSlopeText = "1:2";
           isoAngle = true;
         }
-        // Snap vertically
+        // 1:3 (71.56°)
+        else if (angle < 74.0) {
+          int steps = (ABS(dy) + 1) / 3;
+          stroke[1].x = m_first.x + SGN(dx) * (steps > 0 ? steps - 1 : 0);
+          stroke[1].y = m_first.y + SGN(dy) * (steps * 3 - (steps > 0 ? 1 : 0));
+          m_lastSlopeText = "1:3";
+          isoAngle = true;
+        }
+        // 1:4 (75.96°)
+        else if (angle < 78.0) {
+          int steps = (ABS(dy) + 2) / 4;
+          stroke[1].x = m_first.x + SGN(dx) * (steps > 0 ? steps - 1 : 0);
+          stroke[1].y = m_first.y + SGN(dy) * (steps * 4 - (steps > 0 ? 1 : 0));
+          m_lastSlopeText = "1:4";
+          isoAngle = true;
+        }
+        // 1:6 (80.53°)
+        else if (angle < 82.5) {
+          int steps = (ABS(dy) + 3) / 6;
+          stroke[1].x = m_first.x + SGN(dx) * (steps > 0 ? steps - 1 : 0);
+          stroke[1].y = m_first.y + SGN(dy) * (steps * 6 - (steps > 0 ? 1 : 0));
+          m_lastSlopeText = "1:6";
+          isoAngle = true;
+        }
+        // 1:10 (84.28°)
+        else if (angle < 87.5) {
+          int steps = (ABS(dy) + 5) / 10;
+          stroke[1].x = m_first.x + SGN(dx) * (steps > 0 ? steps - 1 : 0);
+          stroke[1].y = m_first.y + SGN(dy) * (steps * 10 - (steps > 0 ? 1 : 0));
+          m_lastSlopeText = "1:10";
+          isoAngle = true;
+        }
+        // Vert (90°)
         else {
           stroke[1].x = m_first.x;
+          m_lastSlopeText = "Vertical";
         }
       }
-      // Rectangles and ellipses
       else {
         stroke[1].x = m_first.x + SGN(dx) * minsize;
         stroke[1].y = m_first.y + SGN(dy) * minsize;
@@ -305,10 +366,8 @@ public:
       stroke[1].y = m_first.y + ry;
     }
 
-    // Adjust points for selection like tools (so we can select tiles)
     if (loop->getController()->canSnapToGrid() && loop->getSnapToGrid()) {
       auto bounds = loop->getBrush()->bounds();
-
       if (loop->isSelectingTiles()) {
         snapPointsToGridTiles(loop, stroke);
       }
@@ -317,7 +376,6 @@ public:
           stroke[1].x -= bounds.w;
         else if (stroke[0].x > stroke[1].x)
           stroke[0].x -= bounds.w;
-
         if (stroke[0].y < stroke[1].y)
           stroke[1].y -= bounds.h;
         else if (stroke[0].y > stroke[1].y)
@@ -328,23 +386,18 @@ public:
 
   void getStrokeToInterwine(const Stroke& input, Stroke& output) override
   {
-    ASSERT(input.size() >= 2);
-    if (input.size() < 2)
-      return;
-
-    output.addPoint(input[0]);
-    output.addPoint(input[1]);
+    if (input.size() >= 2) {
+      output.addPoint(input[0]);
+      output.addPoint(input[1]);
+    }
   }
 
   void getStatusBarText(ToolLoop* loop, const Stroke& stroke, std::string& text) override
   {
-    ASSERT(stroke.size() >= 2);
     if (stroke.size() < 2)
       return;
-
     const int w = ABS(stroke[1].x - stroke[0].x) + 1;
     const int h = ABS(stroke[1].y - stroke[0].y) + 1;
-
     const gfx::Point offset = loop->statusBarPositionOffset();
     const int gcd = base::gcd(w, h);
 
@@ -355,22 +408,18 @@ public:
                        stroke[1].y + offset.y,
                        w,
                        h,
-                       std::sqrt(w * w + h * h));
+                       std::sqrt(static_cast<double>(w * w + h * h)));
 
     if (hasAngle() || loop->getIntertwine()->snapByAngle()) {
-      double angle;
-      if (hasAngle())
-        angle = m_angle;
-      else
-        angle = std::atan2(static_cast<double>(stroke[0].y - stroke[1].y),
-                           static_cast<double>(stroke[1].x - stroke[0].x));
-      text += fmt::format(" :angle: {:.1f}", 180.0 * angle / PI);
+      double angle = (hasAngle()) ? m_angle :
+                                    std::atan2(static_cast<double>(stroke[1].y - stroke[0].y),
+                                               static_cast<double>(stroke[1].x - stroke[0].x));
+      text += fmt::format(" :angle: {:.1f}°", 180.0 * angle / PI);
+      if (!m_lastSlopeText.empty())
+        text += fmt::format(" :slope: {}", m_lastSlopeText);
     }
-
     if (m_cornerRadius.hasRadius() && loop->getIntertwine()->cornerRadiusSupport())
       text += fmt::format(" :corner_radius: {}", m_cornerRadius.radius(stroke));
-
-    // Aspect ratio at the end
     text += fmt::format(" :aspect_ratio: {}:{}", w / gcd, h / gcd);
   }
 
@@ -381,20 +430,16 @@ private:
   void snapPointsToGridTiles(ToolLoop* loop, Stroke& stroke)
   {
     auto grid = loop->getGridBounds();
-
     Rect a(snap_to_grid(grid, stroke[0].toPoint(), PreferSnapTo::BoxOrigin),
            snap_to_grid(grid, stroke[0].toPoint(), PreferSnapTo::BoxEnd));
     Rect b(snap_to_grid(grid, stroke[1].toPoint(), PreferSnapTo::BoxOrigin),
            snap_to_grid(grid, stroke[1].toPoint(), PreferSnapTo::BoxEnd));
-
     a |= b;
-
     stroke[0] = a.origin();
     stroke[1] = a.point2() - gfx::Point(1, 1);
   }
 
   bool hasAngle() const { return (ABS(m_angle) > 0.001); }
-
   void onMoveOrigin(const Point& delta) override
   {
     m_first.x += delta.x;
@@ -406,6 +451,7 @@ private:
   Stroke::Pt m_first;
   Stroke::Pt m_center;
   double m_angle;
+  std::string m_lastSlopeText;
   CornerRadius m_cornerRadius;
 };
 
@@ -415,43 +461,25 @@ public:
   void pressButton(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
     MoveOriginCapability::pressButton(loop, stroke, pt);
-
     stroke.addPoint(pt);
     stroke.addPoint(pt);
   }
-
   bool releaseButton(Stroke& stroke, const Stroke::Pt& pt) override
   {
-    ASSERT(!stroke.empty());
     if (stroke.empty())
       return false;
-
-    if (stroke[stroke.size() - 2] == pt && stroke[stroke.size() - 1] == pt)
-      return false; // Click in the same point (no-drag), we are done
-    else
-      return true; // Continue adding points
+    return !(stroke[stroke.size() - 2] == pt && stroke[stroke.size() - 1] == pt);
   }
-
   void movement(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
-    ASSERT(!stroke.empty());
-    if (stroke.empty())
-      return;
-
-    if (MoveOriginCapability::isMovingOrigin(loop, stroke, pt))
-      return;
-
-    stroke[stroke.size() - 1] = pt;
+    if (!stroke.empty() && !MoveOriginCapability::isMovingOrigin(loop, stroke, pt))
+      stroke[stroke.size() - 1] = pt;
   }
-
   void getStrokeToInterwine(const Stroke& input, Stroke& output) override { output = input; }
-
   void getStatusBarText(ToolLoop* loop, const Stroke& stroke, std::string& text) override
   {
-    ASSERT(!stroke.empty());
     if (stroke.empty())
       return;
-
     gfx::Point offset = loop->statusBarPositionOffset();
     text = fmt::format(":start: {} {} :end: {} {}",
                        stroke.firstPoint().x + offset.x,
@@ -463,31 +491,20 @@ public:
 
 class OnePointController : public Controller {
 public:
-  // Do not apply grid to "one point tools" (e.g. magic wand, flood fill, etc.)
   bool canSnapToGrid() override { return false; }
   bool isOnePoint() override { return true; }
-
   void pressButton(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
     if (stroke.size() == 0)
       stroke.addPoint(pt);
   }
-
   bool releaseButton(Stroke& stroke, const Stroke::Pt& pt) override { return false; }
-
-  void movement(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
-  {
-    // Do nothing
-  }
-
+  void movement(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override {}
   void getStrokeToInterwine(const Stroke& input, Stroke& output) override { output = input; }
-
   void getStatusBarText(ToolLoop* loop, const Stroke& stroke, std::string& text) override
   {
-    ASSERT(!stroke.empty());
     if (stroke.empty())
       return;
-
     gfx::Point offset = loop->statusBarPositionOffset();
     text = fmt::format(":pos: {} {}", stroke[0].x + offset.x, stroke[0].y + offset.y);
   }
@@ -498,7 +515,6 @@ public:
   void pressButton(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
     MoveOriginCapability::pressButton(loop, stroke, pt);
-
     if (stroke.size() == 0) {
       stroke.reset(4, pt);
       m_clickCounter = 0;
@@ -506,18 +522,15 @@ public:
     else
       m_clickCounter++;
   }
-
   bool releaseButton(Stroke& stroke, const Stroke::Pt& pt) override
   {
     m_clickCounter++;
     return m_clickCounter < 4;
   }
-
   void movement(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
     if (MoveOriginCapability::isMovingOrigin(loop, stroke, pt))
       return;
-
     switch (m_clickCounter) {
       case 0:
         for (int i = 1; i < stroke.size(); ++i)
@@ -531,17 +544,12 @@ public:
       case 3: stroke[2] = pt; break;
     }
   }
-
   void getStrokeToInterwine(const Stroke& input, Stroke& output) override { output = input; }
-
   void getStatusBarText(ToolLoop* loop, const Stroke& stroke, std::string& text) override
   {
-    ASSERT(stroke.size() >= 4);
     if (stroke.size() < 4)
       return;
-
     gfx::Point offset = loop->statusBarPositionOffset();
-
     text = fmt::format(":start: {} {} :end: {} {} ({} {} - {} {})",
                        stroke[0].x + offset.x,
                        stroke[0].y + offset.y,
@@ -557,64 +565,46 @@ private:
   int m_clickCounter;
 };
 
-// Controls the shift+click to draw a two-points line and then
-// freehand until the mouse is released.
 class LineFreehandController : public Controller {
 public:
   bool isFreehand() override { return true; }
-
   Stroke::Pt getLastPoint() const override { return m_last; }
-
   void prepareController(ToolLoop* loop) override { m_controller = nullptr; }
-
   void pressButton(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
     m_last = pt;
-
     if (m_controller == nullptr)
       m_controller = &m_twoPoints;
     else if (m_controller == &m_twoPoints) {
-      if ((int(loop->getModifiers()) & int(ToolLoopModifiers::kSquareAspect))) {
-        // Don't switch to freehand, just continue with lines if we
-        // have the square aspect key pressed (e.g. Ctrl+Shift). In
-        // this way we avoid to paint two straight lines: 1) from the
-        // very beginning, and 2) from the end of the first straight
-        // line to the new "pt".
-      }
-      else {
+      if (!(int(loop->getModifiers()) & int(ToolLoopModifiers::kSquareAspect)))
         m_controller = &m_freehand;
-      }
-      return; // Don't send first pressButton() click to the freehand controller
+      return;
     }
-
     m_controller->pressButton(loop, stroke, pt);
   }
-
   bool releaseButton(Stroke& stroke, const Stroke::Pt& pt) override
   {
     if (!stroke.empty())
       m_last = stroke.lastPoint();
     return false;
   }
-
   void movement(ToolLoop* loop, Stroke& stroke, const Stroke::Pt& pt) override
   {
     m_last = pt;
-    m_controller->movement(loop, stroke, pt);
+    if (m_controller)
+      m_controller->movement(loop, stroke, pt);
   }
-
   void getStrokeToInterwine(const Stroke& input, Stroke& output) override
   {
-    m_controller->getStrokeToInterwine(input, output);
+    if (m_controller)
+      m_controller->getStrokeToInterwine(input, output);
   }
-
   void getStatusBarText(ToolLoop* loop, const Stroke& stroke, std::string& text) override
   {
-    m_controller->getStatusBarText(loop, stroke, text);
+    if (m_controller)
+      m_controller->getStatusBarText(loop, stroke, text);
   }
-
   bool handleTracePolicy() const override { return (m_controller == &m_twoPoints); }
-
   TracePolicy getTracePolicy() const override { return TracePolicy::Last; }
 
 private:
